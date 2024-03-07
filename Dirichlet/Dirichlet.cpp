@@ -25,7 +25,7 @@ class wavefront_approximator {
             for (int j = start_block_j; j < end_block_j; j++) {
                 double temp = u[i][j];
                 u[i][j] = 0.25 * (u[i - 1][j] + u[i + 1][j] + u[i][j - 1] + u[i][j + 1] - h * h * f[i][j]);
-                double d = temp - u[i][j];
+                double d = fabs(temp - u[i][j]);
                 if (dm < d)
                     dm = d;
             }
@@ -56,7 +56,9 @@ public:
         double dmax = 0;
         std::vector<double> dm(nb, 0);
         do {
+            dmax = 0;
             for (int nx = 0; nx < nb; nx++) {
+                dm[nx] = 0;
 #pragma omp parallel for shared(nx, dm)
                 for (int i = 0; i <= nx; i++) {
                     int j = nx - i;
@@ -67,7 +69,7 @@ public:
             }
             for (int nx = nb - 2; nx >= 0; nx--) {
 #pragma omp parallel for shared(nx, dm)
-                for (int i = 1; i <= nx; i++) {
+                for (int i = 1; i < nx + 1; i++) {
                     int j = 2 * (nb - 1) - nx - i;
                     double d = process_block(i, j);
                     if (dm[i] < d)
@@ -83,7 +85,7 @@ public:
 };
 
 int main() {
-    const int threads_num = 4;
+    const int threads_num = 8;
     omp_set_num_threads(threads_num);
 
     auto fun = [](double x, double y) { return x * sin(x) + cos(y) / y; };
