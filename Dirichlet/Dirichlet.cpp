@@ -24,7 +24,7 @@ class wavefront_approximator {
         for (int i = start_block_i; i < end_block_i; i++) {
             for (int j = start_block_j; j < end_block_j; j++) {
                 double temp = u[i][j];
-                u[i][j] = 0.25 * (u[i - 1][j] + u[i + 1][j] + u[i][j - 1] + u[i][j + 1] - h * h * f[i][j]);
+                u[i][j] = 0.25 * fabs(u[i - 1][j] + u[i + 1][j] + u[i][j - 1] + u[i][j + 1] - h * h * f[i][j]);
                 double d = fabs(temp - u[i][j]);
                 if (dm < d)
                     dm = d;
@@ -85,12 +85,12 @@ public:
 };
 
 int main() {
-    const int threads_num = 8;
+    const int threads_num = 4;
     omp_set_num_threads(threads_num);
 
     auto fun = [](double x, double y) { return x * sin(x) + cos(y) / y; };
-    auto fun_d = [](double x, double y) { return 2 * cos(x) - x * sin(x) - 2 * sin(y) - y * cos(y); };
-    wavefront_approximator net(100, fun, fun_d);
+    auto fun_d = [](double x, double y) {return 2 * cos(x) - x * sin(x) - 2 * sin(y) - y * cos(y); };
+    wavefront_approximator net(1000, fun, fun_d);
 
     auto start_time = omp_get_wtime();
     net.process_net();
