@@ -2,7 +2,6 @@
 #include <cmath>
 #include <vector>
 #include <omp.h>
-#include <chrono>
 
 class wavefront_approximator {
     const int size;
@@ -87,7 +86,7 @@ int main() {
     const int threads_num = 4;
     omp_set_num_threads(threads_num);
 
-    auto fun = [](double x, double y) { return x * sin(x) + cos(y) / y;  };
+    auto fun = [](double x, double y) { return x * sin(x) + cos(y) / y; };
     auto fun_d = [](double x, double y) { return 2 * cos(x) - x * sin(x) - 2 * sin(y) - y * cos(y); };
     wavefront_approximator net(100, fun, fun_d);
 
