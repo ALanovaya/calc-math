@@ -2,14 +2,74 @@ import numpy as np
 import argparse
 from PIL import Image
 import struct
+import time
+from numpy.linalg import qr
 
 SVD_HEADER = b'SVDS'
 HEADER_SIZE = 16
 
 def compress_numpy(channel: np.ndarray, k: int):
-    u, sigma, vt = np.linalg.svd(channel, full_matrices=False)
-    data = np.concatenate((u[:, :k].flatten(), sigma[:k], vt[:k, :].flatten()))
+    u, s, vt = np.linalg.svd(channel, full_matrices=False)
+    data = np.concatenate((u[:, :k].flatten(), s[:k], vt[:k, :].flatten()))
     return data.astype(np.float32).tobytes()
+
+def find_eigenvector_and_value(channel, v, time_bound, eps):
+    transposed_product = np.dot(channel.T, channel)
+    while time.time() * 1000 < time_bound:
+        v_new = np.dot(transposed_product, v)
+        v_new /= np.linalg.norm(v_new)
+        if np.allclose(v_new, v, eps):
+            break
+        v = v_new
+    eigenvalue = np.dot(np.dot(transposed_product, v), v.T)
+    return v, eigenvalue
+
+def simplified_channel_compression(channel: np.ndarray, rank: int, time_limit: int):
+    eps = 1e-10
+    np.random.seed(0)
+    n, m = channel.shape
+    v = np.random.rand(m)
+    v /= np.linalg.norm(v)
+    u = np.zeros((n, rank))
+    sigma = np.zeros(rank)
+    vt = np.zeros((rank, m))
+
+    time_bound = time.time() * 1000 + time_limit
+    for i in range(rank):
+        v, eigenvalue = find_eigenvector_and_value(channel, v, time_bound, eps)
+        vt[i, :] = v
+        u[:, i] = np.dot(channel, v) / eigenvalue
+        sigma[i] = eigenvalue
+        channel = channel - eigenvalue * np.outer(u[:, i], v)
+
+    compressed_data = np.concatenate((u.flatten(), sigma, vt.flatten()))
+    return compressed_data.astype(np.float32).tobytes()
+
+def advanced_svd_compression(channel_data, rank, time_limit):
+    n, m = channel_data.shape
+    u = np.zeros((n, rank))
+    sigma = np.zeros(rank)
+    v = np.zeros((m, rank))
+
+    eps = 1e-10
+    time_bound = time.time() * 1000 + time_limit
+
+    i = 0
+    while time.time() * 1000 < time_bound:
+        q, r = np.linalg.qr(np.dot(channel_data, v))
+        u = q[:, :rank]
+
+        q, r = np.linalg.qr(np.dot(channel_data.T, u))
+        v = q[:, :rank]
+
+        sigma = np.diag(r[:rank, :rank])
+        i += 1
+        if (np.allclose(np.dot(channel_data, v), np.dot(u, r[:rank, :rank]), eps) and i % 10 == 0):
+            break 
+
+    # Flatten U, S, and V and concatenate them into a single bytearray
+    compressed_data = np.concatenate((u.flatten(), sigma, v.T.flatten()))
+    return compressed_data.astype(np.float32).tobytes()
 
 def compress_image(in_file, out_file, method, compression):
     # Load the image to compress
@@ -24,6 +84,10 @@ def compress_image(in_file, out_file, method, compression):
         channel_data = image_data[..., color_channel]
         if method == "numpy":
             compressed_data += compress_numpy(channel_data, k)
+        elif method == "simple":
+            compressed_data += simplified_channel_compression(channel_data, k, 1000)
+        elif method == "advanced":
+            compressed_data += advanced_svd_compression(channel_data, k, 1000)
         else:
             raise NotImplementedError('There is no another methods yet')
     with open(out_file, 'wb') as file:
@@ -51,14 +115,14 @@ def decompress_image(input_file, result_image_name):
             vt = np.frombuffer(channel_data[4 * n * k + 4 * k:], dtype=np.float32).reshape(k, m)
             
             # Reconstruct the channel by multiplying the matrices and add it to the list
-            channel_matrix = np.dot(u, np.diag(sigma)).dot(vt)
-            image_channels.append(channel_matrix)
+            channel_channel = np.dot(u, np.diag(sigma)).dot(vt)
+            image_channels.append(channel_channel)
 
         # Stack the channels, clip to valid range and convert to uint8
-        image_matrix = np.stack(image_channels, axis=2).clip(0, 255).astype(np.uint8)
+        image_channel = np.stack(image_channels, axis=2).clip(0, 255).astype(np.uint8)
 
         # Create and save the image
-        result_image = Image.fromarray(image_matrix)
+        result_image = Image.fromarray(image_channel)
         result_image.save(result_image_name)
 
 def main():
